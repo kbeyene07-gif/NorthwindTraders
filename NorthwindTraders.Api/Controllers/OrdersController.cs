@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NorthwindTraders.Api.Security;
-using NorthwindTraders.Api.Services.Orders;
+using NorthwindTraders.Application.Services.Orders;
 using NorthwindTraders.Application.Dtos.Orders;
 
 

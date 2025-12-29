@@ -1,13 +1,16 @@
-﻿
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using NorthwindTraders.Application.Common;
 using NorthwindTraders.Application.Dtos.Products;
+using NorthwindTraders.Application.Products.Queries;
 using NorthwindTraders.Domain.Common;
 using NorthwindTraders.Domain.Models;
+
 namespace NorthwindTraders.Application.Services.Products
 {
     public class ProductService : IProductService
     {
+        private const int MaxPageSize = 100;
+
         private readonly INorthwindDbContext _context;
 
         public ProductService(INorthwindDbContext context)
@@ -15,19 +18,77 @@ namespace NorthwindTraders.Application.Services.Products
             _context = context;
         }
 
-        public async Task<PagedResult<ProductDto>> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default)
+        // NEW enterprise catalog query
+        public async Task<PagedResult<ProductDto>> GetCatalogAsync(ProductQuery query, CancellationToken ct = default)
         {
-            if (pageNumber <= 0) pageNumber = 1;
-            if (pageSize <= 0) pageSize = 10;
+            var pageNumber = query.PageNumber <= 0 ? 1 : query.PageNumber;
+            var pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
 
-            var query = _context.Products
+            if (pageSize > MaxPageSize)
+                throw new ArgumentException($"PageSize cannot exceed {MaxPageSize}.", nameof(query.PageSize));
+
+            if (query.MinPrice is not null && query.MinPrice < 0)
+                throw new ArgumentException("MinPrice cannot be negative.", nameof(query.MinPrice));
+
+            if (query.MaxPrice is not null && query.MaxPrice < 0)
+                throw new ArgumentException("MaxPrice cannot be negative.", nameof(query.MaxPrice));
+
+            if (query.MinPrice is not null && query.MaxPrice is not null && query.MinPrice > query.MaxPrice)
+                throw new ArgumentException("MinPrice cannot be greater than MaxPrice.");
+
+            var sortBy = (query.SortBy ?? "name").Trim().ToLowerInvariant();
+            var sortDir = (query.SortDir ?? "asc").Trim().ToLowerInvariant();
+
+            if (sortDir is not ("asc" or "desc"))
+                throw new ArgumentException("SortDir must be 'asc' or 'desc'.", nameof(query.SortDir));
+
+            var baseQuery = _context.Products
                 .AsNoTracking()
-                .Include(p => p.Supplier);
+                .Include(p => p.Supplier)
+                .AsQueryable();
 
-            var totalCount = await query.CountAsync(ct);
+            // Filters
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var term = query.Search.Trim();
+                baseQuery = baseQuery.Where(p => p.ProductName.Contains(term));
+            }
 
-            var items = await query
-                .OrderBy(p => p.ProductName)
+            if (query.SupplierId is not null)
+            {
+                if (query.SupplierId <= 0)
+                    throw new ArgumentException("SupplierId must be a positive integer.", nameof(query.SupplierId));
+
+                baseQuery = baseQuery.Where(p => p.SupplierId == query.SupplierId);
+            }
+
+            if (query.MinPrice is not null)
+                baseQuery = baseQuery.Where(p => p.UnitPrice >= query.MinPrice);
+
+            if (query.MaxPrice is not null)
+                baseQuery = baseQuery.Where(p => p.UnitPrice <= query.MaxPrice);
+
+            if (query.Discontinued is not null)
+                baseQuery = baseQuery.Where(p => p.IsDiscontinued == query.Discontinued);
+
+            // Sorting
+            baseQuery = (sortBy, sortDir) switch
+            {
+                ("price", "asc") => baseQuery.OrderBy(p => p.UnitPrice).ThenBy(p => p.ProductName),
+                ("price", "desc") => baseQuery.OrderByDescending(p => p.UnitPrice).ThenBy(p => p.ProductName),
+
+                ("createdat", "asc") => baseQuery.OrderBy(p => p.CreatedAtUtc).ThenBy(p => p.ProductName),
+                ("createdat", "desc") => baseQuery.OrderByDescending(p => p.CreatedAtUtc).ThenBy(p => p.ProductName),
+
+                ("name", "desc") => baseQuery.OrderByDescending(p => p.ProductName),
+                ("name", "asc") => baseQuery.OrderBy(p => p.ProductName),
+
+                _ => throw new ArgumentException("SortBy must be one of: name, price, createdAt.", nameof(query.SortBy))
+            };
+
+            var totalCount = await baseQuery.CountAsync(ct);
+
+            var items = await baseQuery
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
                 .Select(p => new ProductDto
@@ -53,6 +114,10 @@ namespace NorthwindTraders.Application.Services.Products
             };
         }
 
+        // Backwards compatible method (old signature)
+        public Task<PagedResult<ProductDto>> GetPagedAsync(int pageNumber, int pageSize, CancellationToken ct = default)
+            => GetCatalogAsync(new ProductQuery { PageNumber = pageNumber, PageSize = pageSize }, ct);
+
         public async Task<ProductDto?> GetByIdAsync(int id, CancellationToken ct = default)
         {
             return await _context.Products
@@ -76,14 +141,12 @@ namespace NorthwindTraders.Application.Services.Products
 
         public async Task<ProductDto> CreateAsync(CreateProductDto dto, CancellationToken ct = default)
         {
-            // Basic guardrails (better with FluentValidation, but this is still enterprise-friendly)
             if (string.IsNullOrWhiteSpace(dto.ProductName))
                 throw new ArgumentException("ProductName is required.", nameof(dto.ProductName));
 
             if (dto.UnitPrice < 0)
                 throw new ArgumentOutOfRangeException(nameof(dto.UnitPrice), "UnitPrice cannot be negative.");
 
-            // Validate supplier exists + get supplier name for DTO (no Entry()/LoadAsync)
             var supplier = await _context.Suppliers
                 .AsNoTracking()
                 .Where(s => s.Id == dto.SupplierId)
@@ -128,7 +191,14 @@ namespace NorthwindTraders.Application.Services.Products
             if (entity == null)
                 return false;
 
-            entity.ProductName = dto.ProductName;
+            // Basic guardrails
+            if (string.IsNullOrWhiteSpace(dto.ProductName))
+                throw new ArgumentException("ProductName is required.", nameof(dto.ProductName));
+
+            if (dto.UnitPrice < 0)
+                throw new ArgumentOutOfRangeException(nameof(dto.UnitPrice), "UnitPrice cannot be negative.");
+
+            entity.ProductName = dto.ProductName.Trim();
             entity.SupplierId = dto.SupplierId;
             entity.UnitPrice = dto.UnitPrice;
             entity.Package = dto.Package;
@@ -151,4 +221,3 @@ namespace NorthwindTraders.Application.Services.Products
         }
     }
 }
-

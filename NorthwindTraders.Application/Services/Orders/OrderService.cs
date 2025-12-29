@@ -4,7 +4,7 @@ using NorthwindTraders.Application.Dtos.OrderItems;
 using NorthwindTraders.Application.Dtos.Orders;
 using NorthwindTraders.Domain.Common;
 
-namespace NorthwindTraders.Api.Services.Orders
+namespace NorthwindTraders.Application.Services.Orders
 {
     public class OrderService : IOrderService
     {

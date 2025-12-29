@@ -13,8 +13,8 @@
             public const string ProductsRead = "read:products";
             public const string ProductsWrite = "write:products";
            
-            public const string OrderItemsRead = "read:OrderItems";
-            public const string OrderItemsWrite = "write:OrderItems";
+            public const string OrderItemsRead = "read:orderItems";
+            public const string OrderItemsWrite = "write:orderItems";
 
     }
     }

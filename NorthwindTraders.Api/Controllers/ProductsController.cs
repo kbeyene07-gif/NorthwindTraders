@@ -2,15 +2,15 @@
 using Microsoft.AspNetCore.Mvc;
 using NorthwindTraders.Api.Security;
 using NorthwindTraders.Application.Dtos.Products;
+using NorthwindTraders.Application.Products.Queries;
 using NorthwindTraders.Application.Services.Products;
-
 
 namespace NorthwindTraders.Api.Controllers.v1
 {
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
-    [Authorize(Policy = AuthScopes.ProductsRead)]   // All actions need read:products
+    [Authorize(Policy = AuthScopes.ProductsRead)]
     public class ProductsController : ControllerBase
     {
         private readonly IProductService _service;
@@ -20,14 +20,12 @@ namespace NorthwindTraders.Api.Controllers.v1
             _service = service;
         }
 
-        // GET: api/v1/products?pageNumber=1&pageSize=10
+        // Enterprise catalog:
+        // GET: api/v1/products?pageNumber=1&pageSize=20&search=milk&supplierId=3&minPrice=2&maxPrice=10&sortBy=price&sortDir=desc
         [HttpGet]
-        public async Task<IActionResult> GetProducts(
-            [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10,
-            CancellationToken ct = default)
+        public async Task<IActionResult> GetProducts([FromQuery] ProductQuery query, CancellationToken ct = default)
         {
-            var result = await _service.GetPagedAsync(pageNumber, pageSize, ct);
+            var result = await _service.GetCatalogAsync(query, ct);
             return Ok(result);
         }
 
@@ -45,9 +43,7 @@ namespace NorthwindTraders.Api.Controllers.v1
         // POST: api/v1/products
         [HttpPost]
         [Authorize(Policy = AuthorizationPolicies.ProductsWriteOrAdmin)]
-        public async Task<IActionResult> CreateProduct(
-            [FromBody] CreateProductDto dto,
-            CancellationToken ct = default)
+        public async Task<IActionResult> CreateProduct([FromBody] CreateProductDto dto, CancellationToken ct = default)
         {
             if (!ModelState.IsValid)
                 return ValidationProblem(ModelState);
@@ -63,10 +59,7 @@ namespace NorthwindTraders.Api.Controllers.v1
         // PUT: api/v1/products/3
         [HttpPut("{id:int}")]
         [Authorize(Policy = AuthorizationPolicies.ProductsWriteOrAdmin)]
-        public async Task<IActionResult> UpdateProduct(
-            int id,
-            [FromBody] UpdateProductDto dto,
-            CancellationToken ct = default)
+        public async Task<IActionResult> UpdateProduct(int id, [FromBody] UpdateProductDto dto, CancellationToken ct = default)
         {
             if (!ModelState.IsValid)
                 return ValidationProblem(ModelState);

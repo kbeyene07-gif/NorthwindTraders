@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DotNet.Testcontainers" Version="1.6.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.9.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+
+    <!-- Integration testing host -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.0" />
+
+    <!-- Test DB (pick ONE option; start with InMemory for speed) -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NorthwindTraders.Api\NorthwindTraders.Api.csproj" />
+    <ProjectReference Include="..\NorthwindTraders.Application\NorthwindTraders.Application.csproj" />
+    <ProjectReference Include="..\NorthwindTraders.Infrastructure\NorthwindTraders.Infrastructure.csproj" />
+  </ItemGroup>
+
+
+</Project>

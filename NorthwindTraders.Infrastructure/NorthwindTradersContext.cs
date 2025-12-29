@@ -1,7 +1,7 @@
-﻿using NorthwindTraders.Domain.Models;
-
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using NorthwindTraders.Application.Common;
+using NorthwindTraders.Domain.Models;
+using NorthwindTraders.Domain.Models.Identity;
 
 namespace NorthwindTraders.Infrastructure
 {
@@ -49,6 +49,9 @@ namespace NorthwindTraders.Infrastructure
                 .HasOne(oi => oi.Product)
                 .WithMany(p => p.OrderItems)
                 .HasForeignKey(oi => oi.ProductId);
+            modelBuilder.Entity<UserRole>()
+            .HasKey(x => new { x.UserId, x.RoleId });
+
         }
     }
 }
