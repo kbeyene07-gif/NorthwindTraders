@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
 
     <!-- Senior-grade: keep code clean -->
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>

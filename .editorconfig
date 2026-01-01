@@ -1,0 +1,49 @@
+root = true
+
+# =========================
+# General
+# =========================
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,md}]
+indent_size = 2
+
+# =========================
+# C#
+# =========================
+[*.cs]
+csharp_new_line_before_open_brace = all
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+
+# Prefer file-scoped namespaces (modern .NET)
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# Prefer "var" in obvious cases
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+
+# Expression-bodied members (not too aggressive)
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+
+# Remove unused usings
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.WHITESPACE.severity = suggestion
+
+
+# Make null-safety visible (you already use net8)
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8618.severity = warning
+
+# Avoid "async void" except event handlers
+dotnet_diagnostic.CS1998.severity = warning

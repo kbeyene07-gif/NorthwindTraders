@@ -1,11 +1,11 @@
-﻿using System.Net;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using NorthwindTraders.Api.Middleware;
@@ -17,8 +17,8 @@ using NorthwindTraders.Application.Services.Products;
 using NorthwindTraders.Application.Services.Suppliers;
 using NorthwindTraders.Infrastructure;
 using Serilog;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 
+namespace NorthwindTraders.Api;
 public class Program
 {
     private static void Main(string[] args)
@@ -40,6 +40,25 @@ public class Program
                 {
                     options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
                 });
+
+            // ✅ ProblemDetails (RFC 7807) + traceId/correlationId everywhere
+            builder.Services.AddProblemDetails(options =>
+            {
+                options.CustomizeProblemDetails = ctx =>
+                {
+                    ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
+
+                    // correlation id comes from your CorrelationIdMiddleware
+                    ctx.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj);
+                    if (cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
+                        ctx.ProblemDetails.Extensions["correlationId"] = cid;
+                };
+            });
+
+            // ✅ Middleware DI registrations (needed for UseMiddleware<T>())
+            builder.Services.AddTransient<ExceptionHandlingMiddleware>();
+            builder.Services.AddTransient<CorrelationIdMiddleware>();
+            builder.Services.AddTransient<SecurityHeadersMiddleware>();
 
             // 2) Swagger + JWT support (Dev only in pipeline)
             builder.Services.AddEndpointsApiExplorer();
@@ -153,12 +172,10 @@ public class Program
             });
 
             // 11) Health Checks (readiness)
-
             builder.Services.AddHealthChecks()
-    .AddDbContextCheck<NorthwindTradersContext>(
-        name: "sqlserver",
-        failureStatus: HealthStatus.Unhealthy);
-
+                .AddDbContextCheck<NorthwindTradersContext>(
+                    name: "sqlserver",
+                    failureStatus: HealthStatus.Unhealthy);
 
             // 12) Rate Limiting + 429 ProblemDetails
             builder.Services.AddRateLimiter(options =>
@@ -229,24 +246,26 @@ public class Program
             Directory.CreateDirectory(logsPath);
             Log.Information("Logs folder path: {LogsPath}", logsPath);
 
-            // Middleware pipeline (order matters)
+            // ✅ Middleware pipeline (order matters)
+
+            // 1) Correlation + security headers first (so every response has them)
+            app.UseMiddleware<CorrelationIdMiddleware>();
+            app.UseMiddleware<SecurityHeadersMiddleware>();
+
+            // 2) Global exception handling EARLY (wraps everything below)
+            app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+            // 3) Swagger (dev only)
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
 
-            app.UseMiddleware<CorrelationIdMiddleware>();
-
-            app.UseMiddleware<SecurityHeadersMiddleware>();
-
             app.UseHttpsRedirection();
 
             // Logs HTTP requests (method/path/status/duration)
             app.UseSerilogRequestLogging();
-
-            // Global exception handling
-            app.UseMiddleware<ExceptionHandlingMiddleware>();
 
             app.UseCors(corsPolicyName);
 

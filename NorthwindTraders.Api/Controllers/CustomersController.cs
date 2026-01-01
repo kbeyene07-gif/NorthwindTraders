@@ -4,7 +4,6 @@ using NorthwindTraders.Api.Security;
 using NorthwindTraders.Application.Dtos.Customers;
 using NorthwindTraders.Application.Services.Customers;
 
-
 namespace NorthwindTraders.Api.Controllers.v1
 {
     [ApiController]
@@ -32,7 +31,8 @@ namespace NorthwindTraders.Api.Controllers.v1
         }
 
         // GET: api/v1/customers/5
-        [HttpGet("{id:int}")]
+        // ✅ Name the route so POST can reference it safely
+        [HttpGet("{id:int}", Name = "Customers_GetById")]
         public async Task<IActionResult> GetCustomer(int id, CancellationToken ct = default)
         {
             var customer = await _service.GetByIdAsync(id, ct);
@@ -55,19 +55,27 @@ namespace NorthwindTraders.Api.Controllers.v1
 
         // POST: api/v1/customers
         [HttpPost]
+        [Authorize(Policy = AuthScopes.CustomersWrite)]
         public async Task<IActionResult> CreateCustomer(
             [FromBody] CreateCustomerDto dto,
             CancellationToken ct = default)
         {
+            // [ApiController] already returns 400 automatically for invalid ModelState,
+            // but keeping this is fine if you prefer explicit.
             if (!ModelState.IsValid)
                 return ValidationProblem(ModelState);
 
             var created = await _service.CreateAsync(dto, ct);
 
-            return CreatedAtAction(
-                nameof(GetCustomer),
-                new { id = created.Id, version = HttpContext.GetRequestedApiVersion()?.ToString() ?? "1.0" },
-                created);
+            // ✅ Pull version from route values (works in unit tests; no DI/service provider needed)
+            var version = RouteData.Values["version"]?.ToString() ?? "1.0";
+
+            // ✅ Refactor-safe: uses the named GET route, not HttpContext versioning services
+            return CreatedAtRoute(
+                routeName: "Customers_GetById",
+                routeValues: new { version, id = created.Id },
+                value: created
+            );
         }
 
         // PUT: api/v1/customers/5
@@ -91,7 +99,6 @@ namespace NorthwindTraders.Api.Controllers.v1
         // DELETE: api/v1/customers/5
         [HttpDelete("{id:int}")]
         [Authorize(Policy = AuthScopes.CustomersWrite)]
-
         public async Task<IActionResult> DeleteCustomer(int id, CancellationToken ct = default)
         {
             var success = await _service.DeleteAsync(id, ct);

@@ -10,10 +10,14 @@ using NorthwindTraders.Tests.Integration.TestAuth;
 
 namespace NorthwindTraders.Tests.Integration.TestHost;
 
-public sealed class NorthwindApiFactory : WebApplicationFactory<Program>
+public sealed class NorthwindApiFactory : WebApplicationFactory<NorthwindTraders.Api.Program>
+
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // 👇 ADD THIS LINE FIRST
+        builder.UseEnvironment("Testing");
+
         builder.ConfigureServices(services =>
         {
             // 1) Replace real DbContext with InMemory
