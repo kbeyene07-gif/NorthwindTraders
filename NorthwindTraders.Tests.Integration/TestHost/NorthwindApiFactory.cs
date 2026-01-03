@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NorthwindTraders.Api;
+using NorthwindTraders.Application.Common;
 using NorthwindTraders.Infrastructure;
 using NorthwindTraders.Tests.Integration.TestAuth;
 
@@ -18,15 +19,17 @@ public sealed class NorthwindApiFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // ✅ Remove ANY existing DbContext registration coming from Program.cs
+            //  Remove ANY existing DbContext registration coming from Program.cs
             services.RemoveAll(typeof(DbContextOptions<NorthwindTradersContext>));
             services.RemoveAll(typeof(NorthwindTradersContext));
 
-            // ✅ Register ONE shared in-memory database for the whole test host
+            //  Register ONE shared in-memory database for the whole test host
             services.AddDbContext<NorthwindTradersContext>(options =>
                 options.UseInMemoryDatabase("Northwind_IntegrationTests"));
+            services.AddScoped<INorthwindDbContext>(sp => sp.GetRequiredService<NorthwindTradersContext>());
 
-            // ✅ Test authentication scheme (ONLY here, not in Program.cs)
+
+            //  Test authentication scheme (ONLY here, not in Program.cs)
             services.AddAuthentication(options =>
             {
                 options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;

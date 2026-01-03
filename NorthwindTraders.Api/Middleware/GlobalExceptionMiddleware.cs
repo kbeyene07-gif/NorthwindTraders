@@ -1,11 +1,10 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Hosting;
 using Serilog;
 
 namespace NorthwindTraders.Api.Middleware;
 
-public sealed class ExceptionHandlingMiddleware(RequestDelegate next, IHostEnvironment env)
+public sealed class GlobalExceptionMiddleware(RequestDelegate next, IHostEnvironment env)
 {
     public async Task Invoke(HttpContext context)
     {
@@ -82,11 +81,13 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, IHostEnvir
         string? correlationId,
         IHostEnvironment env)
     {
-        // In Production: don't leak stack traces or internal messages.
-        // In Development: include exception message to speed up debugging.
-        var detail = env.IsDevelopment()
+     
+        // Why: In Testing we WANT the real error message so tests and debugging are fast.
+        // In Production we do NOT leak internal messages.
+        var detail = (env.IsDevelopment() || env.IsEnvironment("Testing"))
             ? exception.Message
             : "Please contact support with the provided correlationId.";
+
 
         var problemDetails = new ProblemDetails
         {
@@ -102,6 +103,7 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, IHostEnvir
         if (!string.IsNullOrWhiteSpace(correlationId))
             problemDetails.Extensions["correlationId"] = correlationId;
 
+    
         context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = statusCode;
 

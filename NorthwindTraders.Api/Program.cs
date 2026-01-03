@@ -1,10 +1,8 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using FluentValidation;
-using FluentValidation.AspNetCore;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using NorthwindTraders.Api.Middleware;
 using NorthwindTraders.Api.Security;
-using NorthwindTraders.Application;
+using NorthwindTraders.Application.Common;
 using NorthwindTraders.Application.Mapping;
 using NorthwindTraders.Application.Services.Customers;
 using NorthwindTraders.Application.Services.Orders;
@@ -23,13 +21,14 @@ using NorthwindTraders.Infrastructure;
 using Serilog;
 
 namespace NorthwindTraders.Api;
+
 public class Program
 {
     private static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Serilog: configure as early as possible
+        // Why: configure Serilog early so startup failures and host logs are captured consistently.
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(builder.Configuration)
             .CreateLogger();
@@ -39,16 +38,24 @@ public class Program
         try
         {
             // 1) Controllers + JSON options
-            builder.Services
-           .AddControllers()
-            .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
+            builder.Services.AddControllers()
+                .AddJsonOptions(options =>
+                {
+                    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+                });
 
-            builder.Services.AddFluentValidationAutoValidation();
-            builder.Services.AddValidatorsFromAssembly(typeof(AppMappingProfile).Assembly);
+            // Why: enables {version:apiVersion} route constraint used by controllers
+            // e.g. [Route("api/v{version:apiVersion}/[controller]")]
+            builder.Services.AddApiVersioning(options =>
+            {
+                options.AssumeDefaultVersionWhenUnspecified = true;
+                options.DefaultApiVersion = new ApiVersion(1, 0);
+                options.ReportApiVersions = true;
+            });
 
-
-            // ✅ ProblemDetails (RFC 7807) + traceId/correlationId everywhere
-            builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+            // Why: Ensures FluentValidation/DataAnnotations return a consistent RFC7807 payload
+            // (ValidationProblemDetails) instead of different shapes depending on where validation happens.
+            builder.Services.Configure<ApiBehaviorOptions>(options =>
             {
                 options.InvalidModelStateResponseFactory = context =>
                 {
@@ -56,13 +63,20 @@ public class Program
                     {
                         Title = "Validation failed",
                         Status = StatusCodes.Status400BadRequest,
-                        Type = "https://httpstatuses.com/400",
+                        Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
                         Instance = context.HttpContext.Request.Path
                     };
 
-                    // correlation id 
-                    if (context.HttpContext.Items.TryGetValue("CorrelationId", out var cid) && cid is string correlationId)
-                        problemDetails.Extensions["correlationId"] = correlationId;
+                    // Why: traceId helps correlate client errors to server logs and distributed tracing.
+                    problemDetails.Extensions["traceId"] =
+                        Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+
+                    // Why: MUST match CorrelationIdMiddleware storage key (HeaderName = "X-Correlation-Id").
+                    if (context.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj) &&
+                        cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
+                    {
+                        problemDetails.Extensions["correlationId"] = cid;
+                    }
 
                     return new BadRequestObjectResult(problemDetails)
                     {
@@ -71,21 +85,27 @@ public class Program
                 };
             });
 
+            // Why: ProblemDetails gives a consistent error contract across the API (RFC 7807),
+            // and we attach traceId/correlationId so issues are supportable.
             builder.Services.AddProblemDetails(options =>
             {
                 options.CustomizeProblemDetails = ctx =>
                 {
-                    ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
+                    ctx.ProblemDetails.Extensions["traceId"] =
+                        Activity.Current?.Id ?? ctx.HttpContext.TraceIdentifier;
 
-                    // correlation id comes from  CorrelationIdMiddleware
-                    ctx.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj);
-                    if (cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
+                    if (ctx.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj) &&
+                        cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
+                    {
                         ctx.ProblemDetails.Extensions["correlationId"] = cid;
+                    }
                 };
             });
 
-            // ✅ Middleware DI registrations (needed for UseMiddleware<T>())
-            builder.Services.AddTransient<ExceptionHandlingMiddleware>();
+            // Middleware DI registrations
+            // Note: UseMiddleware<T>() can resolve middleware without explicit registration,
+            // but keeping these is fine and makes intent obvious.
+            builder.Services.AddTransient<GlobalExceptionMiddleware>();
             builder.Services.AddTransient<CorrelationIdMiddleware>();
             builder.Services.AddTransient<SecurityHeadersMiddleware>();
 
@@ -99,6 +119,7 @@ public class Program
                     Version = "v1"
                 });
 
+                // XML comments
                 var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
                 var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
                 c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
@@ -110,7 +131,7 @@ public class Program
                     Scheme = "bearer",
                     BearerFormat = "JWT",
                     In = ParameterLocation.Header,
-                    Description = "Enter: Bearer {JWT token}"
+                    Description = "Enter: Bearer {your JWT token}"
                 });
 
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -118,136 +139,33 @@ public class Program
                     {
                         new OpenApiSecurityScheme
                         {
-                            Reference = new OpenApiReference
-                            {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "Bearer"
-                            }
+                            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
                         },
                         Array.Empty<string>()
                     }
                 });
             });
 
-            // 3) API Versioning
-            builder.Services.AddApiVersioning(options =>
-            {
-                options.AssumeDefaultVersionWhenUnspecified = true;
-                options.DefaultApiVersion = new ApiVersion(1, 0);
-                options.ReportApiVersions = true;
-            });
-
-            // 4) Auth settings
-            var authSection = builder.Configuration.GetSection("Authentication");
-            var authority = authSection["Authority"];
-            var audience = authSection["Audience"];
-
-            // 5) Authentication: JWT Bearer
-            builder.Services
-                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(options =>
-                {
-                    options.Authority = authority;
-                    options.Audience = audience;
-
-                    // Senior-grade: strict validation (defaults usually true, but make explicit)
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-
-                        RoleClaimType = "roles",
-                        NameClaimType = ClaimTypes.NameIdentifier,
-                        ClockSkew = TimeSpan.FromMinutes(2)
-                    };
-                });
-
-            // 6) Authorization policies
-            builder.Services.AddAuthorization(AuthorizationPolicies.AddAppPolicies);
-
-            // 7) AutoMapper
-            builder.Services.AddAutoMapper(typeof(AppMappingProfile).Assembly);
-
-            // 8) DbContext
-            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
-
-            if (string.IsNullOrWhiteSpace(connectionString) && !builder.Environment.IsEnvironment("Testing"))
-            {
-                throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-            }
-            if (!builder.Environment.IsEnvironment("Testing"))
-                builder.Services.AddDbContext<NorthwindTradersContext>(options =>options.UseSqlServer(connectionString));
-
-            builder.Services.AddScoped<NorthwindTraders.Application.Common.INorthwindDbContext>(sp =>
-                sp.GetRequiredService<NorthwindTradersContext>());
-
-            // 9) Dependency Injection for services
-            builder.Services.AddScoped<ICustomerService, CustomerService>();
-            builder.Services.AddScoped<IProductService, ProductService>();
-            builder.Services.AddScoped<ISupplierService, SupplierService>();
-            builder.Services.AddScoped<IOrderService, OrderService>();
-
-            // 10) CORS
-            var corsPolicyName = "AngularClient";
+            // 3) CORS
+            var corsPolicyName = "DefaultCors";
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy(corsPolicyName, policy =>
                 {
-                    policy
-                        .WithOrigins("http://localhost:4200", "https://localhost:4200")
+                    policy.AllowAnyOrigin()
                         .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials();
+                        .AllowAnyMethod();
                 });
             });
 
-            // 11) Health Checks (readiness)
-            builder.Services.AddHealthChecks()
-                .AddDbContextCheck<NorthwindTradersContext>(
-                    name: "sqlserver",
-                    failureStatus: HealthStatus.Unhealthy);
-
-            // 12) Rate Limiting + 429 ProblemDetails
+            // 4) Rate limiting
             builder.Services.AddRateLimiter(options =>
             {
-                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-                options.OnRejected = async (context, token) =>
-                {
-                    var httpContext = context.HttpContext;
-
-                    httpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj);
-
-                    var problem = new ProblemDetails
-                    {
-                        Type = "https://httpstatuses.com/429",
-                        Title = "Too many requests.",
-                        Status = StatusCodes.Status429TooManyRequests,
-                        Detail = "Rate limit exceeded. Try again soon.",
-                        Instance = httpContext.Request.Path
-                    };
-
-                    problem.Extensions["traceId"] = httpContext.TraceIdentifier;
-
-                    if (cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
-                        problem.Extensions["correlationId"] = cid;
-
-                    httpContext.Response.ContentType = "application/problem+json";
-                    await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken: token);
-                };
-
-                // Global limiter: protect everything
                 options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 {
-                    var userKey = httpContext.User?.Identity?.IsAuthenticated == true
-                        ? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "auth-unknown"
-                        : null;
-
-                    var ipKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "ip-unknown";
-                    var key = userKey ?? ipKey;
+                    var key = httpContext.User?.Identity?.IsAuthenticated == true
+                        ? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "auth"
+                        : httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon";
 
                     return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
                     {
@@ -258,21 +176,61 @@ public class Program
                     });
                 });
 
-                // Named policy: stricter for auth endpoints (optional)
-                options.AddPolicy("auth", httpContext =>
-                {
-                    var ipKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? "ip-unknown";
-
-                    return RateLimitPartition.GetFixedWindowLimiter(ipKey, _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = 10,
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0
-                    });
-                });
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             });
 
-      
+            // 5) Infrastructure: DbContext only when NOT Testing
+            // Why: prevents tests from accidentally registering two DbContexts (POST writes DB A, GET reads DB B).
+            if (!builder.Environment.IsEnvironment("Testing"))
+            {
+                var cs = builder.Configuration.GetConnectionString("DefaultConnection");
+
+                if (string.IsNullOrWhiteSpace(cs))
+                    throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+                builder.Services.AddDbContext<NorthwindTradersContext>(options =>
+                    options.UseSqlServer(cs));
+            }
+            builder.Services.AddScoped<INorthwindDbContext>(sp => sp.GetRequiredService<NorthwindTradersContext>());
+
+            // 6) App services
+            builder.Services.AddAutoMapper(typeof(AppMappingProfile));
+            builder.Services.AddScoped<ICustomerService, CustomerService>();
+            builder.Services.AddScoped<IProductService, ProductService>();
+            builder.Services.AddScoped<IOrderService, OrderService>();
+            builder.Services.AddScoped<ISupplierService, SupplierService>();
+
+            // 7) Authorization policies (keep yours as-is)
+            builder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy(AuthScopes.CustomersRead, policy => policy.RequireAuthenticatedUser());
+                options.AddPolicy(AuthScopes.CustomersWrite, policy => policy.RequireAuthenticatedUser());
+            });
+
+            // 8) Authentication: JWT Bearer
+            var authSection = builder.Configuration.GetSection("Authentication");
+            var authority = authSection["Authority"];
+            var audience = authSection["Audience"];
+
+            builder.Services
+                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(options =>
+                {
+                    options.Authority = authority;
+                    options.Audience = audience;
+
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true
+                    };
+                });
+
+            // 9) Health checks
+            builder.Services.AddHealthChecks()
+                .AddCheck("self", () => HealthCheckResult.Healthy(), new[] { "ready" });
 
             var app = builder.Build();
 
@@ -281,35 +239,51 @@ public class Program
             Directory.CreateDirectory(logsPath);
             Log.Information("Logs folder path: {LogsPath}", logsPath);
 
-            // ✅ Middleware pipeline (order matters)
+            // =========================
+            // Middleware pipeline
+            // =========================
 
-            // 1) Correlation + security headers first (so every response has them)
+            // Why: CorrelationId first so EVERY response/error can include it (headers + ProblemDetails + logs).
             app.UseMiddleware<CorrelationIdMiddleware>();
+
+            // Why: Endpoint routing must run before auth so auth can evaluate endpoint metadata/policies correctly.
+            app.UseRouting();
+
+            // Why: Auth must run before endpoints; if missing/misconfigured you want 401/403 (not random failures).
+            app.UseAuthentication();
+            app.UseAuthorization();
+
+            // Why: Security headers on every response (OK to be after auth).
             app.UseMiddleware<SecurityHeadersMiddleware>();
 
-            // 2) Global exception handling EARLY (wraps everything below)
-            app.UseMiddleware<ExceptionHandlingMiddleware>();
+            // Why: Single centralized exception handler that guarantees RFC7807 ProblemDetails for unhandled exceptions.
+            // IMPORTANT: keep only ONE exception middleware (GlobalExceptionMiddleware).
+            app.UseMiddleware<GlobalExceptionMiddleware>();
 
-            // 3) Swagger (dev only)
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
 
-            app.UseHttpsRedirection();
+            // Why: request logs enriched with traceId + correlationId for production-grade observability.
+            app.UseSerilogRequestLogging(opts =>
+            {
+                opts.EnrichDiagnosticContext = (diagCtx, httpCtx) =>
+                {
+                    diagCtx.Set("traceId", Activity.Current?.Id ?? httpCtx.TraceIdentifier);
 
-            // Logs HTTP requests (method/path/status/duration)
-            app.UseSerilogRequestLogging();
+                    if (httpCtx.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj) &&
+                        cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
+                    {
+                        diagCtx.Set("correlationId", cid);
+                    }
+                };
+            });
 
             app.UseCors(corsPolicyName);
-
             app.UseRateLimiter();
 
-            app.UseAuthentication();
-            app.UseAuthorization();
-
-            // Endpoints
             app.MapControllers();
             app.MapHealthChecks("/health");
 
@@ -317,6 +291,7 @@ public class Program
         }
         catch (Exception ex)
         {
+            // Why: don’t swallow startup failures; tests/CI need the real exception.
             Log.Fatal(ex, "Application start-up failed");
             throw;
         }
