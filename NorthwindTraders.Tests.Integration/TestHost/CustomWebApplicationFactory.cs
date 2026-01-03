@@ -1,10 +1,11 @@
-﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.VisualStudio.TestPlatform.TestHost;
+using Microsoft.Extensions.Hosting;
+using NorthwindTraders.Api;
 using NorthwindTraders.Infrastructure;
 using NorthwindTraders.Tests.Integration.TestAuth;
 
@@ -19,6 +20,10 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+
+        // This triggers the "Testing" branch in Program.cs
+        builder.UseEnvironment("Testing");
+
         builder.ConfigureServices(services =>
         {
             // Replace DbContext with SQL Server from testcontainer
@@ -36,11 +41,17 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                 TestAuthHandler.SchemeName, _ => { });
 
-            // Build + apply migrations
-            var sp = services.BuildServiceProvider();
-            using var scope = sp.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<NorthwindTradersContext>();
-            db.Database.Migrate();
+          
         });
+    }
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        IHost host = base.CreateHost(builder);
+
+        using var scope = host.Services.CreateScope();
+        NorthwindTradersContext db = scope.ServiceProvider.GetRequiredService<NorthwindTradersContext>();
+        db.Database.Migrate();
+
+        return host;
     }
 }

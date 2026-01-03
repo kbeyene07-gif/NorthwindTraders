@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NorthwindTraders.Api.Security;
 using NorthwindTraders.Application.Dtos.Customers;
@@ -8,7 +8,7 @@ namespace NorthwindTraders.Api.Controllers.v1
 {
     [ApiController]
     [ApiVersion("1.0")]
-    [Route("api/v{version:apiVersion}/[controller]")]
+    [Route("api/v{version:apiVersion}/customers")]
     [Authorize(Policy = AuthScopes.CustomersRead)]
     public class CustomersController : ControllerBase
     {
@@ -57,20 +57,19 @@ namespace NorthwindTraders.Api.Controllers.v1
         [HttpPost]
         [Authorize(Policy = AuthScopes.CustomersWrite)]
         public async Task<IActionResult> CreateCustomer(
-            [FromBody] CreateCustomerDto dto,
-            CancellationToken ct = default)
+    [FromBody] CreateCustomerDto dto,
+    CancellationToken ct = default)
         {
-            // [ApiController] already returns 400 automatically for invalid ModelState,
-            // but keeping this is fine if you prefer explicit.
-            if (!ModelState.IsValid)
-                return ValidationProblem(ModelState);
-
             var created = await _service.CreateAsync(dto, ct);
 
-            // ✅ Pull version from route values (works in unit tests; no DI/service provider needed)
-            var version = RouteData.Values["version"]?.ToString() ?? "1.0";
+            if (created is null)
+                return Problem(
+                    title: "Customer creation failed",
+                    statusCode: StatusCodes.Status500InternalServerError);
 
-            // ✅ Refactor-safe: uses the named GET route, not HttpContext versioning services
+            // ✅ Unit-test safe (RouteData can be null in controller unit tests)
+            var version = ControllerContext?.RouteData?.Values?["version"]?.ToString() ?? "1.0";
+
             return CreatedAtRoute(
                 routeName: "Customers_GetById",
                 routeValues: new { version, id = created.Id },

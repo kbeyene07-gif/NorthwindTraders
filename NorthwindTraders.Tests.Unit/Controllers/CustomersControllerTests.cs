@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -41,7 +41,7 @@ public class CustomersControllerTests
 
         var controller = new CustomersController(svc.Object);
 
-        // Needed because your action reads HttpContext (for api version)
+        // Needed because my action reads HttpContext (for api version)
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
@@ -64,8 +64,8 @@ public class CustomersControllerTests
         var result = await controller.CreateCustomer(dto, CancellationToken.None);
 
         // Assert
-        var created = result.Should().BeOfType<CreatedAtActionResult>().Subject;
-        created.ActionName.Should().Be(nameof(CustomersController.GetCustomer));
+        var created = result.Should().BeOfType<CreatedAtRouteResult>().Subject;
+        created.RouteName.Should().Be("Customers_GetById");
 
         var body = created.Value.Should().BeOfType<CustomerDto>().Subject;
         body.Id.Should().Be(123);

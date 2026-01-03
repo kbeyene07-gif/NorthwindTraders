@@ -1,7 +1,10 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using NorthwindTraders.Api.Middleware;
 using NorthwindTraders.Api.Security;
+using NorthwindTraders.Application;
 using NorthwindTraders.Application.Mapping;
 using NorthwindTraders.Application.Services.Customers;
 using NorthwindTraders.Application.Services.Orders;
@@ -35,20 +39,45 @@ public class Program
         try
         {
             // 1) Controllers + JSON options
-            builder.Services.AddControllers()
-                .AddJsonOptions(options =>
-                {
-                    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-                });
+            builder.Services
+           .AddControllers()
+            .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
+
+            builder.Services.AddFluentValidationAutoValidation();
+            builder.Services.AddValidatorsFromAssembly(typeof(AppMappingProfile).Assembly);
+
 
             // ✅ ProblemDetails (RFC 7807) + traceId/correlationId everywhere
+            builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+            {
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var problemDetails = new ValidationProblemDetails(context.ModelState)
+                    {
+                        Title = "Validation failed",
+                        Status = StatusCodes.Status400BadRequest,
+                        Type = "https://httpstatuses.com/400",
+                        Instance = context.HttpContext.Request.Path
+                    };
+
+                    // correlation id 
+                    if (context.HttpContext.Items.TryGetValue("CorrelationId", out var cid) && cid is string correlationId)
+                        problemDetails.Extensions["correlationId"] = correlationId;
+
+                    return new BadRequestObjectResult(problemDetails)
+                    {
+                        ContentTypes = { "application/problem+json" }
+                    };
+                };
+            });
+
             builder.Services.AddProblemDetails(options =>
             {
                 options.CustomizeProblemDetails = ctx =>
                 {
                     ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
 
-                    // correlation id comes from your CorrelationIdMiddleware
+                    // correlation id comes from  CorrelationIdMiddleware
                     ctx.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.HeaderName, out var cidObj);
                     if (cidObj is string cid && !string.IsNullOrWhiteSpace(cid))
                         ctx.ProblemDetails.Extensions["correlationId"] = cid;
@@ -81,7 +110,7 @@ public class Program
                     Scheme = "bearer",
                     BearerFormat = "JWT",
                     In = ParameterLocation.Header,
-                    Description = "Enter: Bearer {your JWT token}"
+                    Description = "Enter: Bearer {JWT token}"
                 });
 
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -142,11 +171,15 @@ public class Program
             builder.Services.AddAutoMapper(typeof(AppMappingProfile).Assembly);
 
             // 8) DbContext
-            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-                ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-            builder.Services.AddDbContext<NorthwindTradersContext>(options =>
-                options.UseSqlServer(connectionString));
+
+            if (string.IsNullOrWhiteSpace(connectionString) && !builder.Environment.IsEnvironment("Testing"))
+            {
+                throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+            }
+            if (!builder.Environment.IsEnvironment("Testing"))
+                builder.Services.AddDbContext<NorthwindTradersContext>(options =>options.UseSqlServer(connectionString));
 
             builder.Services.AddScoped<NorthwindTraders.Application.Common.INorthwindDbContext>(sp =>
                 sp.GetRequiredService<NorthwindTradersContext>());
@@ -239,6 +272,8 @@ public class Program
                 });
             });
 
+      
+
             var app = builder.Build();
 
             // Force-create Logs folder + write a startup log
@@ -283,6 +318,7 @@ public class Program
         catch (Exception ex)
         {
             Log.Fatal(ex, "Application start-up failed");
+            throw;
         }
         finally
         {

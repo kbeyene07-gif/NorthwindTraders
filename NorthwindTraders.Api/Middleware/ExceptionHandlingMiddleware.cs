@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -57,7 +57,6 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, IHostEnvir
 
     private static (int StatusCode, string Title, string Type) MapException(Exception ex)
     {
-        // NOTE: You can replace these with your own custom exceptions later.
         return ex switch
         {
             ArgumentException or FormatException

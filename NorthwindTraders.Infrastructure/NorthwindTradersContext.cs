@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using NorthwindTraders.Application.Common;
 using NorthwindTraders.Domain.Models;
 using NorthwindTraders.Domain.Models.Identity;
@@ -29,7 +29,7 @@ namespace NorthwindTraders.Infrastructure
             modelBuilder.Entity<Order>().ToTable("Order");
             modelBuilder.Entity<OrderItem>().ToTable("OrderItem");
 
-            // Your relationship config (if you added it) can stay here too
+            // relationship config (if I added it) can stay here too
             modelBuilder.Entity<Product>()
                 .HasOne(p => p.Supplier)
                 .WithMany(s => s.Products)

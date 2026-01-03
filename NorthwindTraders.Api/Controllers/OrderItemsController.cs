@@ -1,4 +1,4 @@
-﻿//using Microsoft.AspNetCore.Mvc;
+//using Microsoft.AspNetCore.Mvc;
 //using Microsoft.EntityFrameworkCore;
 //using NorthwindTraders.Api.Data;
 //using NorthwindTraders.Api.Models;
@@ -48,7 +48,6 @@
 //        [HttpPost]
 //        public async Task<ActionResult<OrderItem>> CreateOrderItem(OrderItem orderItem)
 //        {
-//            // You can validate OrderId and ProductId exist if you want.
 //            _context.OrderItems.Add(orderItem);
 //            await _context.SaveChangesAsync();
 

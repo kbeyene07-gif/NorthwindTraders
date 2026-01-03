@@ -1,7 +1,7 @@
-﻿namespace NorthwindTraders.Api.Security
+namespace NorthwindTraders.Api.Security
 {
 
-    // Auth0 scopes defined for your API
+    // Auth0 scopes defined for API
     public static class AuthScopes
     {
         public const string CustomersRead = "read:customers";

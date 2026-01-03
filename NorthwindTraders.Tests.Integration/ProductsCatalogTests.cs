@@ -1,5 +1,4 @@
-﻿using NorthwindTraders.Tests.Integration;
-using NorthwindTraders.Tests.Integration.TestHost;
+using NorthwindTraders.Tests.Integration;
 using Xunit;
 
 public class ProductsCatalogTests : IClassFixture<MsSqlFixture>
@@ -8,7 +7,6 @@ public class ProductsCatalogTests : IClassFixture<MsSqlFixture>
 
     public ProductsCatalogTests(MsSqlFixture fixture)
     {
-        var factory = new CustomWebApplicationFactory(fixture.ConnectionString);
-        _client = factory.CreateClient();
+        _client = fixture.Client;
     }
 }

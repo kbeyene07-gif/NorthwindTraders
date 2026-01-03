@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using NorthwindTraders.Application.Common;
 using NorthwindTraders.Application.Dtos.OrderItems;
 using NorthwindTraders.Application.Dtos.Orders;
@@ -108,7 +108,7 @@ namespace NorthwindTraders.Application.Services.Orders
 
         public async Task<OrderDto> CreateAsync(CreateOrderDto dto, CancellationToken ct = default)
         {
-            // 1) Validate input (you can also enforce this with FluentValidation)
+            // 1) Validate input (I can also enforce this with FluentValidation)
             if (dto.TotalAmount < 0)
                 throw new ArgumentOutOfRangeException(nameof(dto.TotalAmount), "TotalAmount cannot be negative.");
 
