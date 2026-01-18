@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
@@ -33,7 +33,7 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
             new(ClaimTypes.NameIdentifier, "integration-test-user"),
             new(ClaimTypes.Name, "Integration Test User"),
 
-            // ✅ IMPORTANT: ONE scope claim, space-separated
+            //  IMPORTANT: ONE scope claim, space-separated
             new("scope", allScopes),
 
             // Optional: role for AdminOnly / OR policies

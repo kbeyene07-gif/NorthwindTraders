@@ -1,4 +1,4 @@
-﻿
+
 
 using NorthwindTraders.Domain.Common;
 
@@ -16,7 +16,7 @@ namespace NorthwindTraders.Domain.Models
 
         public decimal TotalAmount { get; set; }
 
-        // 👇 Use this name to match DbContext config
+        //  Use this name to match DbContext config
         public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
     }
 }

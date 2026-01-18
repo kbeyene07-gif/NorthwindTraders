@@ -1,97 +1,93 @@
-//using Microsoft.AspNetCore.Mvc;
-//using Microsoft.EntityFrameworkCore;
-//using NorthwindTraders.Api.Data;
-//using NorthwindTraders.Api.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using NorthwindTraders.Api.Security;
+using NorthwindTraders.Application.Dtos.OrderItems;
+using NorthwindTraders.Application.Services.OrderItems;
 
-//namespace NorthwindTraders.Api.Controllers
-//{
-//    [ApiController]
-//    [ApiVersion("1.0")]
-//    [Route("api/v{version:apiVersion}/[controller]")]
-//    public class OrderItemsController : ControllerBase
-//    {
-//        private readonly NorthwindTradersContext _context;
+namespace NorthwindTraders.Api.Controllers.v1
+{
+    [ApiController]
+    [ApiVersion("1.0")]
+    [Route("api/v{version:apiVersion}/[controller]")]
+    [Authorize(Policy = AuthScopes.OrderItemsRead)]
+    public class OrderItemsController : ControllerBase
+    {
+        private readonly IOrderItemService _service;
 
-//        public OrderItemsController(NorthwindTradersContext context)
-//        {
-//            _context = context;
-//        }
+        public OrderItemsController(IOrderItemService service)
+        {
+            _service = service;
+        }
 
-//        // GET: api/OrderItems
-//        [HttpGet]
-//        public async Task<ActionResult<IEnumerable<OrderItem>>> GetOrderItems()
-//        {
-//            var orderItems = await _context.OrderItems
-//                .Include(oi => oi.Order)
-//                .Include(oi => oi.Product)
-//                .ToListAsync();
+        // GET: api/v1/orderitems?pageNumber=1&pageSize=20&orderId=10
+        [HttpGet]
+        public async Task<IActionResult> GetOrderItems(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] int? orderId = null,
+            CancellationToken ct = default)
+        {
+            var result = await _service.GetPagedAsync(pageNumber, pageSize, orderId, ct);
+            return Ok(result);
+        }
 
-//            return Ok(orderItems);
-//        }
+        // GET: api/v1/orderitems/5
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> GetOrderItem(int id, CancellationToken ct = default)
+        {
+            var item = await _service.GetByIdAsync(id, ct);
+            if (item == null)
+                return NotFound();
 
-//        // GET: api/OrderItems/5
-//        [HttpGet("{id:int}")]
-//        public async Task<ActionResult<OrderItem>> GetOrderItem(int id)
-//        {
-//            var orderItem = await _context.OrderItems
-//                .Include(oi => oi.Order)
-//                .Include(oi => oi.Product)
-//                .FirstOrDefaultAsync(oi => oi.Id == id);
+            return Ok(item);
+        }
 
-//            if (orderItem == null)
-//                return NotFound();
+        // POST: api/v1/orderitems
+        [HttpPost]
+        [Authorize(Policy = AuthScopes.OrderItemsWrite)]
+        public async Task<IActionResult> CreateOrderItem(
+            [FromBody] CreateOrderItemDto dto,
+            CancellationToken ct = default)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
 
-//            return Ok(orderItem);
-//        }
+            var created = await _service.CreateAsync(dto, ct);
 
-//        // POST: api/OrderItems
-//        [HttpPost]
-//        public async Task<ActionResult<OrderItem>> CreateOrderItem(OrderItem orderItem)
-//        {
-//            _context.OrderItems.Add(orderItem);
-//            await _context.SaveChangesAsync();
+            return CreatedAtAction(
+                nameof(GetOrderItem),
+                new { id = created.Id, version = HttpContext.GetRequestedApiVersion()?.ToString() ?? "1.0" },
+                created);
+        }
 
-//            return CreatedAtAction(nameof(GetOrderItem), new { id = orderItem.Id }, orderItem);
-//        }
+        // PUT: api/v1/orderitems/5
+        [HttpPut("{id:int}")]
+        [Authorize(Policy = AuthScopes.OrderItemsWrite)]
+        public async Task<IActionResult> UpdateOrderItem(
+            int id,
+            [FromBody] UpdateOrderItemDto dto,
+            CancellationToken ct = default)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
 
-//        // PUT: api/OrderItems/5
-//        [HttpPut("{id:int}")]
-//        public async Task<IActionResult> UpdateOrderItem(int id, OrderItem orderItem)
-//        {
-//            if (id != orderItem.Id)
-//                return BadRequest("Id in URL and body must match.");
+            var success = await _service.UpdateAsync(id, dto, ct);
+            if (!success)
+                return NotFound();
 
-//            _context.Entry(orderItem).State = EntityState.Modified;
+            return NoContent();
+        }
 
-//            try
-//            {
-//                await _context.SaveChangesAsync();
-//            }
-//            catch (DbUpdateConcurrencyException)
-//            {
-//                var exists = await _context.OrderItems.AnyAsync(oi => oi.Id == id);
-//                if (!exists)
-//                    return NotFound();
+        // DELETE: api/v1/orderitems/5
+        [HttpDelete("{id:int}")]
+        [Authorize(Policy = AuthScopes.OrderItemsWrite)]
+        public async Task<IActionResult> DeleteOrderItem(int id, CancellationToken ct = default)
+        {
+            var success = await _service.DeleteAsync(id, ct);
+            if (!success)
+                return NotFound();
 
-//                throw;
-//            }
-
-//            return NoContent();
-//        }
-
-//        // DELETE: api/OrderItems/5
-//        [HttpDelete("{id:int}")]
-//        public async Task<IActionResult> DeleteOrderItem(int id)
-//        {
-//            var orderItem = await _context.OrderItems.FindAsync(id);
-//            if (orderItem == null)
-//                return NotFound();
-
-//            _context.OrderItems.Remove(orderItem);
-//            await _context.SaveChangesAsync();
-
-//            return NoContent();
-//        }
-//    }
-//}
-
+            return NoContent();
+        }
+    }
+}

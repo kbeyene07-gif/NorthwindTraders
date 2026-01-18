@@ -1,4 +1,4 @@
-﻿
+
 
 using NorthwindTraders.Domain.Common;
 
@@ -17,7 +17,7 @@ namespace NorthwindTraders.Domain.Models
         public string? Package { get; set; }
         public bool IsDiscontinued { get; set; }
 
-        // 👇 This matches Product -> OrderItems config
+        //  This matches Product -> OrderItems config
         public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
     }
 }

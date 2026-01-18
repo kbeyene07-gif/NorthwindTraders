@@ -78,7 +78,7 @@ namespace NorthwindTraders.Application.Services.Orders
             var order = await _context.Orders
                 .AsNoTracking()
                 .Include(o => o.Customer)
-                .Include(o => o.OrderItems)              // 👈 use OrderItems here
+                .Include(o => o.OrderItems)              //  use OrderItems here
                     .ThenInclude(i => i.Product)
                 .FirstOrDefaultAsync(o => o.Id == id, ct);
 
@@ -94,7 +94,7 @@ namespace NorthwindTraders.Application.Services.Orders
                 CustomerName = order.Customer.FirstName + " " + order.Customer.LastName,
                 TotalAmount = order.TotalAmount,
 
-                // 👇 use OrderItems here too
+                //  use OrderItems here too
                 Items = order.OrderItems.Select(i => new OrderItemDto
                 {
                     Id = i.Id,

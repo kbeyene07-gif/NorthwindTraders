@@ -22,7 +22,7 @@ namespace NorthwindTraders.Infrastructure
         {
             base.OnModelCreating(modelBuilder);
 
-            // 👇 Tell EF the exact table names in SQL Server
+            //  Tell EF the exact table names in SQL Server
             modelBuilder.Entity<Customer>().ToTable("Customer");
             modelBuilder.Entity<Supplier>().ToTable("Supplier");
             modelBuilder.Entity<Product>().ToTable("Product");

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.Identity.Web; // ADD THIS
 using Microsoft.OpenApi.Models;
 using NorthwindTraders.Api.Middleware;
 using NorthwindTraders.Api.Security;
@@ -17,6 +17,7 @@ using NorthwindTraders.Application.Services.Customers;
 using NorthwindTraders.Application.Services.Orders;
 using NorthwindTraders.Application.Services.Products;
 using NorthwindTraders.Application.Services.Suppliers;
+using NorthwindTraders.Application.Services.OrderItems;
 using NorthwindTraders.Infrastructure;
 using Serilog;
 
@@ -102,13 +103,6 @@ public class Program
                 };
             });
 
-            // Middleware DI registrations
-            // Note: UseMiddleware<T>() can resolve middleware without explicit registration,
-            // but keeping these is fine and makes intent obvious.
-            builder.Services.AddTransient<GlobalExceptionMiddleware>();
-            builder.Services.AddTransient<CorrelationIdMiddleware>();
-            builder.Services.AddTransient<SecurityHeadersMiddleware>();
-
             // 2) Swagger + JWT support (Dev only in pipeline)
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>
@@ -131,7 +125,7 @@ public class Program
                     Scheme = "bearer",
                     BearerFormat = "JWT",
                     In = ParameterLocation.Header,
-                    Description = "Enter: Bearer {your JWT token}"
+                    Description = "Enter: Bearer {JWT token}"
                 });
 
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -148,13 +142,26 @@ public class Program
 
             // 3) CORS
             var corsPolicyName = "DefaultCors";
+
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy(corsPolicyName, policy =>
                 {
-                    policy.AllowAnyOrigin()
-                        .AllowAnyHeader()
-                        .AllowAnyMethod();
+                    var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+
+                    if (origins is { Length: > 0 })
+                    {
+                        policy.WithOrigins(origins)
+                              .AllowAnyHeader()
+                              .AllowAnyMethod();
+                    }
+                    else
+                    {
+                        // Dev fallback (NOT for prod)
+                        policy.AllowAnyOrigin()
+                              .AllowAnyHeader()
+                              .AllowAnyMethod();
+                    }
                 });
             });
 
@@ -199,34 +206,20 @@ public class Program
             builder.Services.AddScoped<IProductService, ProductService>();
             builder.Services.AddScoped<IOrderService, OrderService>();
             builder.Services.AddScoped<ISupplierService, SupplierService>();
+            builder.Services.AddScoped<IOrderItemService, OrderItemService>();
 
-            // 7) Authorization policies (keep yours as-is)
+            // 7) Authorization policies 
             builder.Services.AddAuthorization(options =>
             {
                 options.AddPolicy(AuthScopes.CustomersRead, policy => policy.RequireAuthenticatedUser());
                 options.AddPolicy(AuthScopes.CustomersWrite, policy => policy.RequireAuthenticatedUser());
             });
 
-            // 8) Authentication: JWT Bearer
-            var authSection = builder.Configuration.GetSection("Authentication");
-            var authority = authSection["Authority"];
-            var audience = authSection["Audience"];
-
+            //  8) Authentication: Azure Entra ID (Microsoft Identity Platform)
+            // Reads settings from: "AzureAd" section in appsettings*.json
             builder.Services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(options =>
-                {
-                    options.Authority = authority;
-                    options.Audience = audience;
-
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true
-                    };
-                });
+                .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
 
             // 9) Health checks
             builder.Services.AddHealthChecks()
@@ -249,7 +242,8 @@ public class Program
             // Why: Endpoint routing must run before auth so auth can evaluate endpoint metadata/policies correctly.
             app.UseRouting();
 
-            // Why: Auth must run before endpoints; if missing/misconfigured you want 401/403 (not random failures).
+            app.UseCors(corsPolicyName);
+
             app.UseAuthentication();
             app.UseAuthorization();
 
@@ -281,7 +275,6 @@ public class Program
                 };
             });
 
-            app.UseCors(corsPolicyName);
             app.UseRateLimiter();
 
             app.MapControllers();

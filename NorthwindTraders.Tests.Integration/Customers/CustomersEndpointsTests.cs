@@ -20,7 +20,7 @@ public class CustomersEndpointsTests : IClassFixture<NorthwindApiFactory>
     {
         var client = _factory.CreateClient();
 
-        // If your TestAuthHandler expects this header, keep it.
+        // If TestAuthHandler expects this header, keep it.
         // If it doesn’t, it won’t hurt.
         if (!client.DefaultRequestHeaders.Contains("X-Test-Auth"))
             client.DefaultRequestHeaders.Add("X-Test-Auth", "true");
@@ -74,7 +74,7 @@ public class CustomersEndpointsTests : IClassFixture<NorthwindApiFactory>
                 $"POST expected 200/201 but got {(int)post.StatusCode} {post.StatusCode}. Body: {postBody}");
         }
 
-        // Read body (optional, depending on your API contract)
+        // Read body (optional, depending on API contract)
         var created = await post.Content.ReadFromJsonAsync<CustomerDto>();
         created.Should().NotBeNull("POST should return a CustomerDto in the response body");
         created!.Id.Should().BeGreaterThan(0);

@@ -9,7 +9,7 @@ namespace NorthwindTraders.Api.Controllers.v1
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/customers")]
-    [Authorize(Policy = AuthScopes.CustomersRead)]
+    //[Authorize(Policy = AuthScopes.CustomersRead)]
     public class CustomersController : ControllerBase
     {
         private readonly ICustomerService _service;
@@ -31,7 +31,7 @@ namespace NorthwindTraders.Api.Controllers.v1
         }
 
         // GET: api/v1/customers/5
-        // ✅ Name the route so POST can reference it safely
+        // Name the route so POST can reference it safely
         [HttpGet("{id:int}", Name = "Customers_GetById")]
         public async Task<IActionResult> GetCustomer(int id, CancellationToken ct = default)
         {
@@ -67,7 +67,7 @@ namespace NorthwindTraders.Api.Controllers.v1
                     title: "Customer creation failed",
                     statusCode: StatusCodes.Status500InternalServerError);
 
-            // ✅ Unit-test safe (RouteData can be null in controller unit tests)
+            // Unit-test safe (RouteData can be null in controller unit tests)
             var version = ControllerContext?.RouteData?.Values?["version"]?.ToString() ?? "1.0";
 
             return CreatedAtRoute(
